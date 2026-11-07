@@ -2,6 +2,8 @@
 
 A frontend clone of [pxpush.com](https://pxpush.com/), a design-subscription studio with a CRT/old-TV look, built for the Mamikos Frontend Engineer technical test (AI-assisted build).
 
+**Live:** https://mamikos-submission.vercel.app/ (form: [/start](https://mamikos-submission.vercel.app/start))
+
 - **Home page** (`/`): every section of the original, in order. Hero with three.js clouds and a chrome 3D logo, intro, works showcase, stacking benefit cards, pricing with a 3D floppy disk, brand sprint, and footer.
 - **Extra page** (`/start`): the original embeds a Typeform here. The clone replaces it with its own "Start a project" form, which posts to the API.
 
