@@ -66,18 +66,18 @@ const MiniButton = styled.button`
   }
 `;
 
+// .monospace is 50% of the body size: 0.85vw on desktop, 10px at <=1300px.
 const MiniCaption = styled.p`
   margin-top: 0.8vw;
   color: #fff;
   font-family: ${fonts.mono};
-  font-size: 0.85vw;
+  font-size: 50%;
   letter-spacing: 0;
   line-height: 1.15;
   text-transform: uppercase;
 
   ${mq.mobile} {
     margin-top: 8px;
-    font-size: 11px;
   }
 `;
 
@@ -104,7 +104,7 @@ const Welcome = styled.p`
   width: 32vw;
   color: #fff;
   font-family: ${fonts.mono};
-  font-size: 0.85vw;
+  font-size: 50%;
   letter-spacing: -0.05vw;
   text-transform: uppercase;
   white-space: pre-line;
@@ -113,7 +113,6 @@ const Welcome = styled.p`
     right: 20px;
     bottom: 50px;
     width: 45vw;
-    font-size: 11px;
   }
 `;
 

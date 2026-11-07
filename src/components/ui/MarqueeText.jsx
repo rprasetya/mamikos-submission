@@ -122,6 +122,7 @@ export default function MarqueeText({
       lineColor={lineColor}
       className={className}
       data-effect={effects || undefined}
+      data-marquee=""
       aria-hidden="true"
       {...rest}
     >

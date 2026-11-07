@@ -27,18 +27,14 @@ const List = styled.ul`
   list-style: none;
 `;
 
-// Stacking cards: each card sticks 10vh lower than the previous one (desktop),
-// the same resting positions pxpush.com computes on every Lenis scroll event.
+// Stacking cards: each card sticks 10vh lower than the previous one, the same
+// resting positions pxpush.com computes on every Lenis scroll event. Pure CSS,
+// so it also works on phones where Lenis doesn't smooth touch scrolling.
 const Item = styled.li`
   position: sticky;
   top: calc((var(--i) + 1) * 10vh);
   border-top: var(--border);
   background-color: var(--background);
-
-  ${mq.mobile} {
-    position: relative;
-    top: auto;
-  }
 `;
 
 const ItemRow = styled(Row)`
@@ -57,6 +53,7 @@ const Text = styled.div`
   h3 {
     padding-right: 0;
     font-size: 4.42vw;
+    letter-spacing: normal; /* a p.lead on the original, not an h3 */
     line-height: 0.8;
   }
   p {

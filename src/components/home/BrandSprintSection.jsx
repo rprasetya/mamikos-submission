@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import styled from "@emotion/styled";
 import { keyframes } from "@emotion/react";
 import MarqueeText from "@/components/ui/MarqueeText";
@@ -88,11 +88,22 @@ const Copy = styled(Half)`
 // response as the pricing section (fetched once by HomePage).
 export default function BrandSprintSection({ packages }) {
   const root = useRef(null);
+  // The frame is position: fixed, so the browser treats its images as always in
+  // the viewport and loading="lazy" never defers them (~900KB on first paint).
+  // Render them only once the section is a screen away.
+  const [showImages, setShowImages] = useState(false);
   const sprint = packages.items.find((p) => p.kind === "sprint");
   useScrollEffects(root, [packages.status]);
 
   useGSAP(
     () => {
+      ScrollTrigger.create({
+        trigger: root.current,
+        start: "top bottom+=100%",
+        once: true,
+        onEnter: () => setShowImages(true),
+      });
+
       const frame = root.current.querySelector("[data-frame]");
       const stack = root.current.querySelector("[data-stack]");
       const slides = gsap.utils.toArray("[data-slide]", root.current);
@@ -145,7 +156,7 @@ export default function BrandSprintSection({ packages }) {
           {BRANDING_IMAGES.map((src) => (
             <Slide key={src} data-slide>
               {/* eslint-disable-next-line @next/next/no-img-element -- decorative flipbook frame */}
-              <img src={src} alt="" loading="lazy" decoding="async" />
+              {showImages && <img src={src} alt="" decoding="async" />}
             </Slide>
           ))}
         </Stack>

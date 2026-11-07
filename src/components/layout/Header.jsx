@@ -109,7 +109,7 @@ const MenuButton = styled.button`
   position: relative;
   z-index: 4;
   padding: 6px 0;
-  font-family: ${fonts.display};
+  /* original: font: inherit, i.e. the body face (Graphik), not the nav face */
 
   ${mq.mobile} {
     display: block;

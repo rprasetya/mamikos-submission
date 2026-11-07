@@ -12,71 +12,32 @@ import { mq } from "@/styles/theme";
 
 // Dark chrome floppy disk floating left of the pricing cards (pxpush.com's
 // HomePricing scene). Desktop only. All numbers come from the original bundle.
+//
+// Textures are pre-baked at 1024px from the model's 2048px spec/gloss map, with
+// the same formulas pxpush.com runs in the browser on every visit:
+//   roughness = 255 - gloss        colour = #000 -> #777 by min(1, 2 * gloss)
+// That replaced a 3.5MB download plus a per-pixel canvas pass at runtime.
 
 const MODEL_URL = "/img/home/floppy_disk/scene.gltf";
-const SPEC_GLOSS_URL = "/img/home/floppy_disk/textures/material_0_specularGlossiness.png";
+const COLOR_URL = "/img/home/floppy_disk/textures/floppy_color_1024.png";
+const ROUGHNESS_URL = "/img/home/floppy_disk/textures/floppy_roughness_1024.png";
 const ROT_FROM = { x: -0.28, y: 0.85, z: 0.1 };
 const ROT_TO = { x: 0.28, y: -0.55, z: -0.1 };
 
 // Shared between the ScrollTrigger and the render loop.
 const scroll = { progress: 0, boost: 0, direction: 1 };
 
-// The original builds two maps from the gloss channel (alpha) of the
-// spec/gloss texture: roughness = 1 - gloss, colour = #000 → #777 by gloss.
-// The disk is ~400px tall on screen, so the 2048px source is downsampled to
-// 1024px first: 4x fewer pixels to process here and to upload to the GPU.
-const MAP_SIZE = 1024;
-
-function buildMapsFromGloss(image) {
-  const ratio = Math.min(1, MAP_SIZE / Math.max(image.width, image.height));
-  const width = Math.round(image.width * ratio);
-  const height = Math.round(image.height * ratio);
-  const source = document.createElement("canvas");
-  source.width = width;
-  source.height = height;
-  const ctx = source.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(image, 0, 0, width, height);
-  const pixels = ctx.getImageData(0, 0, width, height).data;
-
-  const makeCanvas = (fill) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const c = canvas.getContext("2d");
-    const out = c.createImageData(width, height);
-    for (let i = 0; i < pixels.length; i += 4) fill(out.data, i, pixels[i + 3]);
-    c.putImageData(out, 0, 0);
-    return canvas;
-  };
-
-  const roughness = new THREE.CanvasTexture(
-    makeCanvas((d, i, gloss) => {
-      const v = 255 - gloss;
-      d[i] = d[i + 1] = d[i + 2] = v;
-      d[i + 3] = 255;
-    }),
-  );
-  roughness.colorSpace = THREE.NoColorSpace;
-  roughness.flipY = false;
-
-  const color = new THREE.CanvasTexture(
-    makeCanvas((d, i, gloss) => {
-      const v = Math.round(0x77 * Math.min(1, (gloss / 255) * 2));
-      d[i] = d[i + 1] = d[i + 2] = v;
-      d[i + 3] = 255;
-    }),
-  );
-  color.colorSpace = THREE.SRGBColorSpace;
-  color.flipY = false;
-
-  return { roughness, color };
-}
-
 function Floppy() {
   const { scene } = useGLTF(MODEL_URL);
-  const specGloss = useTexture(SPEC_GLOSS_URL);
+  const [colorMap, roughnessMap] = useTexture([COLOR_URL, ROUGHNESS_URL], ([color, roughness]) => {
+    color.colorSpace = THREE.SRGBColorSpace;
+    roughness.colorSpace = THREE.NoColorSpace;
+    color.flipY = false; // glTF UV convention
+    roughness.flipY = false;
+  });
   const group = useRef(null);
   const model = useRef(null);
+  const { gl, scene: root, camera } = useThree();
 
   // Centre the model and scale its largest side to 1.3 units.
   const { object, scale } = useMemo(() => {
@@ -87,16 +48,14 @@ function Floppy() {
     return { object: clone, scale: 1.3 / Math.max(size.x, size.y, size.z) };
   }, [scene]);
 
-  const maps = useMemo(() => buildMapsFromGloss(specGloss.image), [specGloss]);
-
   useEffect(() => {
     const materials = [];
     object.traverse((child) => {
       if (!child.isMesh) return;
       const material = new THREE.MeshPhysicalMaterial({
-        map: maps.color,
+        map: colorMap,
         normalMap: child.material.normalMap ?? null,
-        roughnessMap: maps.roughness,
+        roughnessMap,
         color: 0xffffff,
         metalness: 1,
         roughness: 0.6,
@@ -111,34 +70,23 @@ function Floppy() {
       child.material = material;
       materials.push(material);
     });
-    return () => {
-      materials.forEach((m) => m.dispose());
-      maps.color.dispose();
-      maps.roughness.dispose();
-    };
-  }, [object, maps]);
 
-  // Compile shaders and upload textures while the browser is idle, long before
-  // the pricing section scrolls in. Otherwise the first visible frame paid for
-  // all of it at once (a ~380ms freeze mid-scroll).
-  const { gl, scene: root, camera } = useThree();
-  useEffect(() => {
+    // Compile shaders and upload textures off the critical path, before the
+    // section is on screen (otherwise the first visible frame froze ~380ms).
     const warm = () => {
-      object.traverse((child) => {
-        if (!child.isMesh) return;
-        const { map, normalMap, roughnessMap } = child.material;
-        [map, normalMap, roughnessMap].forEach((t) => t && gl.initTexture(t));
-      });
+      [colorMap, roughnessMap, ...materials.map((m) => m.normalMap)].forEach((t) => t && gl.initTexture(t));
       if (gl.compileAsync) gl.compileAsync(root, camera).catch(() => {});
       else gl.compile(root, camera);
     };
-    if ("requestIdleCallback" in window) {
-      const id = requestIdleCallback(warm, { timeout: 3000 });
-      return () => cancelIdleCallback(id);
-    }
-    const id = setTimeout(warm, 1500);
-    return () => clearTimeout(id);
-  }, [gl, root, camera, object, maps]);
+    const idle = "requestIdleCallback" in window;
+    const handle = idle ? requestIdleCallback(warm, { timeout: 2000 }) : setTimeout(warm, 500);
+
+    return () => {
+      if (idle) cancelIdleCallback(handle);
+      else clearTimeout(handle);
+      materials.forEach((m) => m.dispose());
+    };
+  }, [object, colorMap, roughnessMap, gl, root, camera]);
 
   useFrame((_, delta) => {
     if (!group.current || !model.current) return;
@@ -179,18 +127,26 @@ const Stage = styled.div`
 export default function FloppyScene({ triggerRef }) {
   const stage = useRef(null);
   const [active, setActive] = useState(false);
-  // Hidden below 600px (as on pxpush.com), so don't download or build it there.
+  // Don't download or build the scene until pricing is ~1.5 screens away, so it
+  // never competes with the hero for bandwidth on a first visit.
+  const [near, setNear] = useState(false);
+  // Hidden below 600px (as on pxpush.com), so skip it there entirely.
   // This component is client-only (next/dynamic, ssr: false), so window exists.
   const [enabled] = useState(() => window.matchMedia("(min-width: 601px)").matches);
 
   useEffect(() => {
     if (!enabled || !triggerRef.current) return undefined;
     let last = 0;
+    const approach = ScrollTrigger.create({
+      trigger: triggerRef.current,
+      start: "top bottom+=150%",
+      once: true,
+      onEnter: () => setNear(true),
+    });
     const trigger = ScrollTrigger.create({
       trigger: triggerRef.current,
       start: "top bottom",
       end: "bottom top",
-      scrub: true,
       onToggle: (self) => setActive(self.isActive),
       onUpdate: (self) => {
         const p = self.progress;
@@ -204,40 +160,41 @@ export default function FloppyScene({ triggerRef }) {
         gsap.set(stage.current, { opacity: gsap.utils.clamp(0, 1, Math.min(fadeIn, fadeOut)) });
       },
     });
-    return () => trigger.kill();
+    return () => {
+      approach.kill();
+      trigger.kill();
+    };
   }, [triggerRef, enabled]);
 
   if (!enabled) return null;
 
   return (
     <Stage ref={stage} aria-hidden="true">
-      {/* The external scene.bin used to come back as a synthetic HTTP 204 on a
-          first visit in Edge (the server sent 200), which GLTFLoader rejects.
-          The buffer is now embedded in scene.gltf as a data URI; this retry
-          stays as a safety net for any other transient load failure. */}
-      <CanvasErrorBoundary retries={1} onRetry={() => useGLTF.clear(MODEL_URL)}>
-        <Canvas
-          frameloop={active ? "always" : "never"}
-          dpr={[1, 1.5]}
-          gl={{ antialias: true, alpha: true }}
-          camera={{ fov: 26, near: 0.1, far: 80, position: [1, 1, 4.9] }}
-          onCreated={({ gl, camera }) => {
-            gl.setClearColor(0x000000, 0);
-            gl.toneMapping = THREE.ACESFilmicToneMapping;
-            gl.toneMappingExposure = 0.5;
-            camera.lookAt(0, 0, 0);
-          }}
-        >
-          <directionalLight color="#ffffff" intensity={10} position={[2.5, 3, 5]} />
-          <directionalLight color="#bcdfff" intensity={5.6} position={[-3, 1, 4]} />
-          <directionalLight color="#ffffff" intensity={1.8} position={[0, 3, -4]} />
-          <ambientLight intensity={0.8} />
-          <RoomEnvironmentMap />
-          <Suspense fallback={null}>
-            <Floppy />
-          </Suspense>
-        </Canvas>
-      </CanvasErrorBoundary>
+      {near && (
+        <CanvasErrorBoundary retries={1} onRetry={() => useGLTF.clear(MODEL_URL)}>
+          <Canvas
+            frameloop={active ? "always" : "never"}
+            dpr={[1, 1.5]}
+            gl={{ antialias: true, alpha: true }}
+            camera={{ fov: 26, near: 0.1, far: 80, position: [1, 1, 4.9] }}
+            onCreated={({ gl, camera }) => {
+              gl.setClearColor(0x000000, 0);
+              gl.toneMapping = THREE.ACESFilmicToneMapping;
+              gl.toneMappingExposure = 0.5;
+              camera.lookAt(0, 0, 0);
+            }}
+          >
+            <directionalLight color="#ffffff" intensity={10} position={[2.5, 3, 5]} />
+            <directionalLight color="#bcdfff" intensity={5.6} position={[-3, 1, 4]} />
+            <directionalLight color="#ffffff" intensity={1.8} position={[0, 3, -4]} />
+            <ambientLight intensity={0.8} />
+            <RoomEnvironmentMap />
+            <Suspense fallback={null}>
+              <Floppy />
+            </Suspense>
+          </Canvas>
+        </CanvasErrorBoundary>
+      )}
     </Stage>
   );
 }

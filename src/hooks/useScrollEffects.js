@@ -13,7 +13,10 @@ const splitWords = (el, onSplit) =>
 
 const EFFECTS = {
   // Words pop forward from z -100 in random order (headings, labels, marquees).
+  // A phone shows a single marquee copy, so with the long range its title could
+  // be the last of 16 random words to appear; finish marquees by mid-screen there.
   titleRandom(el) {
+    const short = el.dataset.small !== undefined || (isMobile() && el.dataset.marquee !== undefined);
     gsap.set(el, { perspective: 1000 });
     splitWords(el, (self) =>
       gsap.fromTo(
@@ -28,7 +31,7 @@ const EFFECTS = {
           scrollTrigger: {
             trigger: el,
             start: "top 90%",
-            end: el.dataset.small !== undefined ? "top 50%" : "top 0%",
+            end: short ? "top 50%" : "top 0%",
             scrub: true,
           },
         },

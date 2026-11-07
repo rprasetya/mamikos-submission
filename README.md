@@ -146,7 +146,9 @@ A body that is not valid JSON returns `400 { "error": "Request body must be vali
 
 - **The "convex" CRT screen is CSS, as on the original.** The curve is `crt.png`, a curved bezel mask stretched over the viewport and scaled to 1.02. Scanlines, a 15% backdrop blur and animated grain sit on top. It is not a WebGL distortion, so text stays crisp and interactive.
 - **The effects system is driven by data attributes.** `data-effect="titleRandom | textFade | fadeOut | separatorIn | overlayIn | parallax | topFade"` mirrors the original's `effect__*` directives. One hook (`useScrollEffects`) wires them up, and it re-runs when async API content arrives.
-- **Stacking benefit cards use CSS `position: sticky`.** The original moves each card by hand on every Lenis scroll event; sticky gives the same resting positions with no per-frame JavaScript.
+- **Stacking benefit cards use CSS `position: sticky`.** The original moves each card by hand on every Lenis scroll event; sticky gives the same resting positions with no per-frame JavaScript. Because it is pure CSS, the stack also works on phones, where the original skips Lenis and so loses the effect.
+- **Mobile marquees finish their reveal by mid-screen.** A phone shows a single marquee copy. With the original's long, random word reveal, its title could stay hidden until the band was about to leave the screen.
+- **Mobile typography was checked against the original.** A script compared the computed font size, line height, letter spacing and family of 35 text samples at 390 px. Every real difference it found is fixed.
 - **ScrollTriggers refresh when the page height changes.** API sections render after the first measurement, so a `ResizeObserver` calls `ScrollTrigger.refresh()`. Without it, every trigger below the API sections was offset; this was found by probing the brand-sprint frame in the browser.
 - **3D scenes are isolated.** Each canvas has an error boundary, so a failed model load hides only that scene instead of unmounting the page (React 19 behaviour). The floppy scene also retries once after clearing the glTF cache.
 - **The floppy's binary buffer is embedded in `scene.gltf` as a data URI.** On a first visit in Edge, the separate `scene.bin` sometimes came back to page JS as an HTTP 204 even though the server sent 200, and `GLTFLoader` rejects anything but 200. Embedding the 4.4 KB buffer removes that request.
@@ -172,9 +174,9 @@ What changed:
   - The 8000-quad geometry is now built straight into typed arrays instead of cloning and merging 8000 `PlaneGeometry` objects.
   - The cloud canvas renders at 0.75× resolution. The sprites are soft, so there is no visible difference, but about 44% fewer pixels are shaded.
 - **Floppy disk:**
-  - Gloss maps are generated at 1024 px instead of 2048 px.
+  - Colour and roughness maps are pre-baked at 1024 px, using the same formulas the original runs in the browser on every visit, and the normal map is downscaled. The textures drop from 4.6 MB to 1.6 MB, with no per-pixel work at runtime.
   - Shaders are compiled and textures uploaded during idle time.
-  - The scene is not loaded at all on mobile, where it is hidden anyway.
+  - The scene only loads once pricing is about 1.5 screens away, and never on mobile, where it is hidden anyway.
 - **3D logo:**
   - Lighter extrusion: `steps: 1` (side-wall subdivisions are invisible) and `curveSegments: 24`. The device pixel ratio is capped at 1.5.
   - When docked, the logo renders at a resolution matching its 25% on-screen size.
@@ -182,6 +184,15 @@ What changed:
 - **CSS:**
   - The scanline jitter moved from a `background-position` animation (a full-viewport repaint at 60 fps) to a `transform` animation.
   - The fixed hero marquee that blurs out on scroll is promoted to its own layer.
+
+The first visit was measured from a cold cache with the network throttled to about 20 Mbps:
+
+| | Before | After |
+| --- | --- | --- |
+| Hero cloud texture and logo SVG start downloading | 3.7–4.2 s (after the three.js chunk) | 0.16 s (`<link rel="preload">`) |
+| Floppy assets at page load | 4.6 MB | none (1.6 MB, fetched on approach) |
+| Brand sprint images at page load | 15 files, ~900 KB (`loading="lazy"` has no effect in a `position: fixed` frame) | none (rendered one screen before the section) |
+| Requests at page load | 54 | 37 |
 
 ## AI workflow notes
 

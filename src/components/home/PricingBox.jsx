@@ -61,7 +61,8 @@ const Badge = styled.span`
   padding: 0.2vw 0.55vw;
   border: var(--border);
   border-radius: 999px;
-  font-family: ${fonts.mono};
+  /* the original asks for var(--mono), which is undefined, so it inherits SemiSqueezed */
+  font-family: ${fonts.display};
   font-size: 0.75vw;
   letter-spacing: 0.02em;
   line-height: 1;
@@ -140,8 +141,8 @@ const Features = styled.ul`
     border-bottom: none;
   }
 
+  /* the original's mobile "font-size: 100%" is on the li, so items stay at 70% (14px) */
   ${mq.mobile} {
-    font-size: 100%;
     li {
       padding: 5px 0;
     }
