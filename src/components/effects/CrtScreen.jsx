@@ -15,8 +15,12 @@ const scanlineSweep = keyframes`
   100% { transform: translate3d(0, -200vh, 0); }
 `;
 
+// The original animates background-position, which repaints the whole viewport
+// 60 times a second. Moving the striped layer with a transform gives the same
+// stepped jitter (0.1vw = a quarter stripe per step) on the compositor only.
 const scanlinesRoll = keyframes`
-  0% { background-position: 0 50%; }
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 6vw, 0); }
 `;
 
 const grain = keyframes`
@@ -67,11 +71,15 @@ const Scanlines = styled(Layer)`
     animation: ${scanlineSweep} 8s linear infinite;
   }
 
-  /* dense horizontal raster lines */
+  /* dense horizontal raster lines (taller than the screen so it can travel) */
   &::after {
-    inset: 0;
+    top: -6vw;
+    right: 0;
+    bottom: 0;
+    left: 0;
     background: linear-gradient(180deg, transparent 50%, rgba(0, 0, 0, 0.3) 51%);
     background-size: 100% 0.4vw;
+    will-change: transform;
     animation: ${scanlinesRoll} 1s steps(60) infinite;
   }
 
@@ -167,10 +175,10 @@ const ReducedMotion = styled.div`
 export default function CrtScreen() {
   return (
     <ReducedMotion aria-hidden="true">
-      <Scanlines />
-      <Gloom />
-      <Vignette />
-      <Noise />
+      <Scanlines data-crt="scanlines" />
+      <Gloom data-crt="gloom" />
+      <Vignette data-crt="vignette" />
+      <Noise data-crt="noise" />
     </ReducedMotion>
   );
 }

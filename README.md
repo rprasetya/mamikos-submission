@@ -148,13 +148,40 @@ A body that is not valid JSON returns `400 { "error": "Request body must be vali
 - **The effects system is driven by data attributes.** `data-effect="titleRandom | textFade | fadeOut | separatorIn | overlayIn | parallax | topFade"` mirrors the original's `effect__*` directives. One hook (`useScrollEffects`) wires them up, and it re-runs when async API content arrives.
 - **Stacking benefit cards use CSS `position: sticky`.** The original moves each card by hand on every Lenis scroll event; sticky gives the same resting positions with no per-frame JavaScript.
 - **ScrollTriggers refresh when the page height changes.** API sections render after the first measurement, so a `ResizeObserver` calls `ScrollTrigger.refresh()`. Without it, every trigger below the API sections was offset; this was found by probing the brand-sprint frame in the browser.
-- **3D scenes are isolated.** Each canvas has an error boundary, so a failed model load hides only that scene instead of unmounting the page (React 19 behaviour). The floppy scene retries once after clearing the glTF cache.
+- **3D scenes are isolated.** Each canvas has an error boundary, so a failed model load hides only that scene instead of unmounting the page (React 19 behaviour). The floppy scene also retries once after clearing the glTF cache.
+- **The floppy's binary buffer is embedded in `scene.gltf` as a data URI.** On a first visit in Edge, the separate `scene.bin` sometimes came back to page JS as an HTTP 204 even though the server sent 200, and `GLTFLoader` rejects anything but 200. Embedding the 4.4 KB buffer removes that request.
 - **Environment maps are generated locally** (PMREM + `RoomEnvironment`), so there are no remote HDR downloads.
 - **`cacheComponents` is off,** so route handlers stay dynamic and never serve a build-time snapshot of in-memory data.
 - **Faithful quirks kept on purpose:**
   - The original loads `cursor.obj` but never adds it to its scene, so it is not rendered here either.
   - The 3D floppy disk and the branding frame are desktop-only, as on the original.
   - The REC dot is static.
+
+## Performance
+
+Measured with a rAF frame counter and `longtask` observer in headless Edge on the target laptop's GPU (Intel UHD, D3D11), at 1920×1080 with 125% scaling, scrolling 10 px per frame:
+
+| Segment | Before | After |
+| --- | --- | --- |
+| Hero, scrolling | 48 fps, 20 frames > 20 ms, worst 83 ms | 60 fps, 0 frames > 20 ms |
+| Pricing, scrolling | one 383 ms freeze (first floppy render) | 60 fps, no freeze |
+| Works, benefits, brand sprint | 60 fps | 60 fps |
+
+What changed:
+- **Clouds:**
+  - The 8000-quad geometry is now built straight into typed arrays instead of cloning and merging 8000 `PlaneGeometry` objects.
+  - The cloud canvas renders at 0.75× resolution. The sprites are soft, so there is no visible difference, but about 44% fewer pixels are shaded.
+- **Floppy disk:**
+  - Gloss maps are generated at 1024 px instead of 2048 px.
+  - Shaders are compiled and textures uploaded during idle time.
+  - The scene is not loaded at all on mobile, where it is hidden anyway.
+- **3D logo:**
+  - Lighter extrusion: `steps: 1` (side-wall subdivisions are invisible) and `curveSegments: 24`. The device pixel ratio is capped at 1.5.
+  - When docked, the logo renders at a resolution matching its 25% on-screen size.
+  - R3F now measures the canvas with `offsetWidth/Height`. Before, the CSS scale was applied twice and the docked logo ended up about 1/16 of its intended size.
+- **CSS:**
+  - The scanline jitter moved from a `background-position` animation (a full-viewport repaint at 60 fps) to a `transform` animation.
+  - The fixed hero marquee that blurs out on scroll is promoted to its own layer.
 
 ## AI workflow notes
 

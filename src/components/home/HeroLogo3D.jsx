@@ -16,10 +16,29 @@ import { mq } from "@/styles/theme";
 // until it docks at the top centre, where clicking it scrolls back to the top.
 
 const SVG_URL = "/img/pxpush.svg";
-const EXTRUDE = { depth: 30, bevelEnabled: true, bevelSegments: 2, steps: 10, bevelSize: 0.5, bevelThickness: 1, curveSegments: 50 };
+// Original: steps 10, curveSegments 50. `steps` only subdivides the straight
+// side walls (no visual effect), and 24 curve segments are indistinguishable at
+// this size, so the mesh is several times lighter with the same silhouette.
+const EXTRUDE = { depth: 30, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: 0.5, bevelThickness: 1, curveSegments: 24 };
 
-// Shared between the scroll handler and the render loop.
+// Shared between the scroll handlers and the render loop.
 const spin = { kick: 0, smooth: 0, enabled: true };
+const dock = { progress: 0 };
+const BASE_DPR = () => Math.min(window.devicePixelRatio || 1, 1.5);
+
+// Docked, the canvas is shown at 25% of its size; render it at a matching
+// resolution instead of drawing 16x the pixels nobody sees.
+function DockResolution() {
+  const setDpr = useThree((state) => state.setDpr);
+  const lowRes = useRef(false);
+  useFrame(() => {
+    const wantLow = dock.progress > 0.6;
+    if (wantLow === lowRes.current) return;
+    lowRes.current = wantLow;
+    setDpr(wantLow ? Math.max(0.5, BASE_DPR() * 0.4) : BASE_DPR());
+  });
+  return null;
+}
 
 function LogoMesh() {
   const svg = useLoader(SVGLoader, SVG_URL);
@@ -117,6 +136,7 @@ export default function HeroLogo3D() {
         scrub: true,
         invalidateOnRefresh: true,
         onUpdate: (self) => {
+          dock.progress = self.progress;
           el.dataset.docked = String(self.progress >= 0.98);
         },
       },
@@ -153,7 +173,11 @@ export default function HeroLogo3D() {
     <Dock ref={dock} onClick={backToTop} aria-hidden="true">
       <CanvasErrorBoundary>
         <Canvas
-          dpr={[1, 2]}
+          dpr={[1, 1.5]}
+          // Measure with offsetWidth/Height: the dock is CSS-scaled to 0.25 while
+          // docked, and the default getBoundingClientRect measurement would shrink
+          // the canvas a second time (logo ended up ~1/16 of its intended size).
+          resize={{ offsetSize: true }}
           gl={{ antialias: true, alpha: true }}
           camera={{ fov: 10, near: 0.1, far: 100, position: [0, 0, 13] }}
           onCreated={({ gl }) => {
@@ -166,6 +190,7 @@ export default function HeroLogo3D() {
           <directionalLight color="#ffffff" intensity={1} position={[0, 2, -8]} />
           <ambientLight intensity={0.8} />
           <RoomEnvironmentMap />
+          <DockResolution />
           <Suspense fallback={null}>
             <LogoMesh />
           </Suspense>

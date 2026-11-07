@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useGLTF, useTexture } from "@react-three/drei";
 import * as THREE from "three";
 import styled from "@emotion/styled";
@@ -23,13 +23,19 @@ const scroll = { progress: 0, boost: 0, direction: 1 };
 
 // The original builds two maps from the gloss channel (alpha) of the
 // spec/gloss texture: roughness = 1 - gloss, colour = #000 → #777 by gloss.
+// The disk is ~400px tall on screen, so the 2048px source is downsampled to
+// 1024px first: 4x fewer pixels to process here and to upload to the GPU.
+const MAP_SIZE = 1024;
+
 function buildMapsFromGloss(image) {
-  const { width, height } = image;
+  const ratio = Math.min(1, MAP_SIZE / Math.max(image.width, image.height));
+  const width = Math.round(image.width * ratio);
+  const height = Math.round(image.height * ratio);
   const source = document.createElement("canvas");
   source.width = width;
   source.height = height;
   const ctx = source.getContext("2d", { willReadFrequently: true });
-  ctx.drawImage(image, 0, 0);
+  ctx.drawImage(image, 0, 0, width, height);
   const pixels = ctx.getImageData(0, 0, width, height).data;
 
   const makeCanvas = (fill) => {
@@ -112,6 +118,28 @@ function Floppy() {
     };
   }, [object, maps]);
 
+  // Compile shaders and upload textures while the browser is idle, long before
+  // the pricing section scrolls in. Otherwise the first visible frame paid for
+  // all of it at once (a ~380ms freeze mid-scroll).
+  const { gl, scene: root, camera } = useThree();
+  useEffect(() => {
+    const warm = () => {
+      object.traverse((child) => {
+        if (!child.isMesh) return;
+        const { map, normalMap, roughnessMap } = child.material;
+        [map, normalMap, roughnessMap].forEach((t) => t && gl.initTexture(t));
+      });
+      if (gl.compileAsync) gl.compileAsync(root, camera).catch(() => {});
+      else gl.compile(root, camera);
+    };
+    if ("requestIdleCallback" in window) {
+      const id = requestIdleCallback(warm, { timeout: 3000 });
+      return () => cancelIdleCallback(id);
+    }
+    const id = setTimeout(warm, 1500);
+    return () => clearTimeout(id);
+  }, [gl, root, camera, object, maps]);
+
   useFrame((_, delta) => {
     if (!group.current || !model.current) return;
     const p = scroll.progress;
@@ -151,9 +179,12 @@ const Stage = styled.div`
 export default function FloppyScene({ triggerRef }) {
   const stage = useRef(null);
   const [active, setActive] = useState(false);
+  // Hidden below 600px (as on pxpush.com), so don't download or build it there.
+  // This component is client-only (next/dynamic, ssr: false), so window exists.
+  const [enabled] = useState(() => window.matchMedia("(min-width: 601px)").matches);
 
   useEffect(() => {
-    if (!triggerRef.current) return undefined;
+    if (!enabled || !triggerRef.current) return undefined;
     let last = 0;
     const trigger = ScrollTrigger.create({
       trigger: triggerRef.current,
@@ -174,12 +205,16 @@ export default function FloppyScene({ triggerRef }) {
       },
     });
     return () => trigger.kill();
-  }, [triggerRef]);
+  }, [triggerRef, enabled]);
+
+  if (!enabled) return null;
 
   return (
     <Stage ref={stage} aria-hidden="true">
-      {/* scene.bin occasionally failed on a cold first load in dev; clear the
-          cached rejection and try again once before giving up quietly. */}
+      {/* The external scene.bin used to come back as a synthetic HTTP 204 on a
+          first visit in Edge (the server sent 200), which GLTFLoader rejects.
+          The buffer is now embedded in scene.gltf as a data URI; this retry
+          stays as a safety net for any other transient load failure. */}
       <CanvasErrorBoundary retries={1} onRetry={() => useGLTF.clear(MODEL_URL)}>
         <Canvas
           frameloop={active ? "always" : "never"}

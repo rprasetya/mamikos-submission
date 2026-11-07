@@ -22,6 +22,9 @@ const Root = styled.div`
   overflow: hidden;
   white-space: nowrap;
   pointer-events: none;
+  /* the fixed hero copy blurs out while scrolling: keep it on its own layer so
+     the blur runs on the GPU instead of repainting the text every frame */
+  will-change: ${(p) => (p.fixed ? "opacity, filter" : "auto")};
 
   &::before,
   &::after {

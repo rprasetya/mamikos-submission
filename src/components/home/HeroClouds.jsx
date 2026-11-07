@@ -4,7 +4,6 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useTexture } from "@react-three/drei";
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import styled from "@emotion/styled";
 import { gsap, ScrollTrigger } from "@/lib/gsap";
 import CanvasErrorBoundary from "@/components/three/CanvasErrorBoundary";
@@ -44,21 +43,50 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
+// Same distribution as the original (8000 64x64 quads, random x/y/rotation/scale,
+// one per z unit), but written straight into typed arrays. Cloning and merging
+// 8000 PlaneGeometry objects cost a few hundred ms of main thread at load.
+const HALF = 32;
+const CORNERS = [
+  [-HALF, HALF, 0, 1],
+  [HALF, HALF, 1, 1],
+  [-HALF, -HALF, 0, 0],
+  [HALF, -HALF, 1, 0],
+]; // x, y, u, v in PlaneGeometry vertex order
+
 function buildCloudGeometry() {
-  const plane = new THREE.PlaneGeometry(64, 64);
-  const dummy = new THREE.Object3D();
-  const planes = [];
+  const positions = new Float32Array(CLOUD_COUNT * 4 * 3);
+  const uvs = new Float32Array(CLOUD_COUNT * 4 * 2);
+  const index = new Uint32Array(CLOUD_COUNT * 6);
+
   for (let i = 0; i < CLOUD_COUNT; i++) {
-    dummy.position.set(Math.random() * 1000 - 500, -Math.random() * Math.random() * 200 - 15, i);
-    dummy.rotation.z = Math.random() * Math.PI;
-    dummy.scale.setScalar(Math.random() * Math.random() * 1.5 + 0.5);
-    dummy.updateMatrix();
-    planes.push(plane.clone().applyMatrix4(dummy.matrix));
+    const x = Math.random() * 1000 - 500;
+    const y = -Math.random() * Math.random() * 200 - 15;
+    const angle = Math.random() * Math.PI;
+    const scale = Math.random() * Math.random() * 1.5 + 0.5;
+    const cos = Math.cos(angle) * scale;
+    const sin = Math.sin(angle) * scale;
+
+    for (let v = 0; v < 4; v++) {
+      const [cx, cy, u, w] = CORNERS[v];
+      const p = (i * 4 + v) * 3;
+      positions[p] = cx * cos - cy * sin + x;
+      positions[p + 1] = cx * sin + cy * cos + y;
+      positions[p + 2] = i;
+      const t = (i * 4 + v) * 2;
+      uvs[t] = u;
+      uvs[t + 1] = w;
+    }
+
+    const base = i * 4;
+    index.set([base, base + 2, base + 1, base + 2, base + 3, base + 1], i * 6);
   }
-  const merged = mergeGeometries(planes);
-  plane.dispose();
-  planes.forEach((g) => g.dispose());
-  return merged;
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex(new THREE.BufferAttribute(index, 1));
+  return geometry;
 }
 
 function Clouds({ boostRef, pointer }) {
@@ -166,7 +194,10 @@ export default function HeroClouds({ boostRef, coverRef }) {
         <CanvasErrorBoundary>
           <Canvas
             frameloop={active ? "always" : "never"}
-            dpr={1}
+            // Thousands of overlapping transparent quads make this fill-rate bound.
+            // The sprites are soft, so 0.75x resolution is visually identical and
+            // cuts the shaded pixels by ~44% (hero scroll was dropping to 48fps).
+            dpr={0.75}
             gl={{ antialias: true, alpha: true }}
             camera={{ fov: 30, near: 1, far: 3000, position: [0, 0, 6000] }}
             onCreated={() => gsap.to(stage.current, { opacity: 1, duration: 1.2, ease: "none", delay: 0.4 })}
