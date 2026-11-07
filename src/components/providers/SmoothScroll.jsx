@@ -29,7 +29,24 @@ export default function SmoothScroll({ children }) {
     gsap.ticker.add(tick);
     gsap.ticker.lagSmoothing(0);
 
-    return () => gsap.ticker.remove(tick);
+    // Sections fed by the API (and late fonts) change the page height after
+    // ScrollTriggers were measured; re-measure whenever the document resizes.
+    let timer;
+    let lastHeight = document.body.scrollHeight;
+    const observer = new ResizeObserver(() => {
+      const height = document.body.scrollHeight;
+      if (height === lastHeight) return;
+      lastHeight = height;
+      clearTimeout(timer);
+      timer = setTimeout(() => ScrollTrigger.refresh(), 150);
+    });
+    observer.observe(document.body);
+
+    return () => {
+      gsap.ticker.remove(tick);
+      observer.disconnect();
+      clearTimeout(timer);
+    };
   }, []);
 
   return (

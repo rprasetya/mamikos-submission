@@ -1,6 +1,8 @@
 import "lenis/dist/lenis.css";
 import AppProviders from "@/components/providers/AppProviders";
 import CrtScreen from "@/components/effects/CrtScreen";
+import PixelCursor from "@/components/effects/PixelCursor";
+import Header from "@/components/layout/Header";
 import { fontVariables } from "@/styles/fonts";
 
 // Vercel exposes the production domain at build time; fall back to local dev.
@@ -28,7 +30,9 @@ export default function RootLayout({ children }) {
       <body>
         <AppProviders>
           <CrtScreen />
+          <Header />
           {children}
+          <PixelCursor />
         </AppProviders>
       </body>
     </html>

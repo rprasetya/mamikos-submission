@@ -1,5 +1,5 @@
-import SetupCheck from "@/components/dev/SetupCheck";
+import HomePage from "@/components/home/HomePage";
 
 export default function Home() {
-  return <SetupCheck />;
+  return <HomePage />;
 }

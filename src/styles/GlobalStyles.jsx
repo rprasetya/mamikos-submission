@@ -144,6 +144,21 @@ const styles = css`
     font-size: 50%;
     letter-spacing: 0;
   }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* SplitText line wrappers (mask: "lines" adds an overflow-clipped parent) */
+  .line {
+    display: block;
+  }
 `;
 
 export default function GlobalStyles() {
